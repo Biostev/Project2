@@ -19,7 +19,7 @@ ALL_SPRITES = {
     }
 
 pygame.init()
-size = WIDTH, HEIGHT = 1920, 1080
+size = WIDTH, HEIGHT = 1000, 1000
 screen = pygame.display.set_mode(size)
 FPS = 60
 
@@ -29,6 +29,7 @@ enemies_group = pygame.sprite.Group()
 map_group = pygame.sprite.Group()
 tiles_group = pygame.sprite.Group()
 boxes_group = pygame.sprite.Group()
+to_draw_group = pygame.sprite.Group()
 
 
 def load_image(filename):
@@ -96,7 +97,9 @@ class Player(pygame.sprite.Sprite):
         self.image = Player.images[0]
         self.pos = [tile_width * pos[0], tile_height * pos[1]]
         self.rect = self.image.get_rect()
-        self.rect.center = self.pos
+        self.rect.topleft = self.pos
+
+        self.move = True
 
         self.inventory = []
         self.selected_item = None
@@ -133,21 +136,23 @@ class Player(pygame.sprite.Sprite):
 
     def update(self, keys):
         if keys:
-            old_rect = self.rect.center
-            old_pos = self.pos
+            old_rect = self.rect
+            old_pos = self.pos[:]
             if keys[pygame.K_DOWN] or keys[pygame.K_s]:
+                self.rect = self.rect.move(0, self.speed)
                 self.pos[1] += self.speed
             elif keys[pygame.K_UP] or keys[pygame.K_w]:
+                self.rect = self.rect.move(0, -self.speed)
                 self.pos[1] -= self.speed
             elif keys[pygame.K_RIGHT] or keys[pygame.K_d]:
+                self.rect = self.rect.move(self.speed, 0)
                 self.pos[0] += self.speed
             elif keys[pygame.K_LEFT] or keys[pygame.K_a]:
+                self.rect = self.rect.move(-self.speed, 0)
                 self.pos[0] -= self.speed
 
-            self.rect.center = self.pos
-
             if pygame.sprite.spritecollideany(self, boxes_group):
-                self.rect.center = old_rect
+                self.rect = old_rect
                 self.pos = old_pos
 
 
@@ -268,12 +273,25 @@ def load_level(filename):
 
 class Tile(pygame.sprite.Sprite):
     def __init__(self, tile_type, pos_x, pos_y):
-        super().__init__(tiles_group)
+        if tile_type in ('floor_light', 'floor_dark'):
+            super().__init__(tiles_group)
+            self.group = tiles_group
+        else:
+            super().__init__(boxes_group)
+            self.group = boxes_group
         self.image = ALL_SPRITES[tile_type][0]
+        self.tile_type = tile_type
         self.pos = [pos_x, pos_y]
-        print(self.pos)
         self.rect = self.image.get_rect().move(
             tile_width * self.pos[0], tile_height * self.pos[1])
+
+    def update(self):
+        delta = 100
+        if -delta <= self.rect.x <= WIDTH + delta and \
+                -delta <= self.rect.y <= HEIGHT + delta:
+            to_draw_group.add(self)
+        else:
+            self.remove(to_draw_group)
 
 
 def generate_level(level):
@@ -282,7 +300,6 @@ def generate_level(level):
         for x in range(len(level[y])):
             if level[y][x] == '#':
                 tile = Tile('wall', x, y)
-                boxes_group.add(tile)
                 all_objects.append(tile)
             elif level[y][x] in ['.', '@']:
                 tile = Tile('floor_light', x, y) if (x + y) % 2 else Tile('floor_dark', x, y)
@@ -338,7 +355,7 @@ class Camera:
     def apply(self, obj):
         obj.pos[0] += self.dx
         obj.pos[1] += self.dy
-        if str(type(obj)) == "<class '__main__.Tile'>":
+        if isinstance(obj, Tile) or isinstance(obj, Player):
             obj.rect.x += self.dx
             obj.rect.y += self.dy
 
@@ -360,7 +377,7 @@ def main():
     text_map = load_level('Map1.txt')
     player, level_x, level_y = generate_level(text_map)
 
-    all_images = [tiles_group, boxes_group, arrows_group,
+    all_images = [to_draw_group, arrows_group,
                   enemies_group, player_group]
 
     clock = pygame.time.Clock()
@@ -387,11 +404,14 @@ def main():
         keys = pygame.key.get_pressed()
         player_group.update(keys)
         arrows_group.update()
-        enemies_group.update(player.rect.center)
+        if enemies:
+            enemies_group.update(player.rect.center)
 
         camera.update(player)
         for obj in all_objects:
             camera.apply(obj)
+        tiles_group.update()
+        boxes_group.update()
 
         screen.fill('black')
         drawer(all_images)
