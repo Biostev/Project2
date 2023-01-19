@@ -4,6 +4,7 @@ import datetime
 import os
 import sys
 import random
+import math
 
 
 START_TIME = datetime.datetime.now()
@@ -21,19 +22,27 @@ ALL_SPRITES = {
 pygame.init()
 size = WIDTH, HEIGHT = 1000, 1000
 screen = pygame.display.set_mode(size)
-FPS = 60
+FPS = 30
 
 player_group = pygame.sprite.Group()
 arrows_group = pygame.sprite.Group()
 enemies_group = pygame.sprite.Group()
 map_group = pygame.sprite.Group()
 tiles_group = pygame.sprite.Group()
-boxes_group = pygame.sprite.Group()
+wall_group = pygame.sprite.Group()
+doors_group = pygame.sprite.Group()
+exit_group = pygame.sprite.Group()
+
+fight_room_group = pygame.sprite.Group()
+simple_fight_room_group = pygame.sprite.Group()
+elite_fight_room_group = pygame.sprite.Group()
+boss_fight_room_group = pygame.sprite.Group()
+
 to_draw_group = pygame.sprite.Group()
 
 
 def load_image(filename):
-    fullname = os.path.join('gameplay resources\\Sprites', filename) + '.png'
+    fullname = os.path.join('gameplay resources', 'Sprites', filename) + '.png'
     image = pygame.image.load(fullname)
     return image
 
@@ -104,9 +113,12 @@ class Player(pygame.sprite.Sprite):
         self.inventory = []
         self.selected_item = None
 
-        self.speed = 10
+        self.speed = 30
 
         self.arrow_speed = 10
+        self.spawns = None
+
+        self.spawn_counter = [0, 0, 0]
         '''# main stats (always shown for player)
         self.hp = 200
         self.mana = 200
@@ -151,12 +163,30 @@ class Player(pygame.sprite.Sprite):
                 self.rect = self.rect.move(-self.speed, 0)
                 self.pos[0] -= self.speed
 
-            if pygame.sprite.spritecollideany(self, boxes_group):
+            if pygame.sprite.spritecollideany(self, wall_group):
                 self.rect = old_rect
                 self.pos = old_pos
+            if pygame.sprite.spritecollideany(self, fight_room_group):
+                # print(self.spawns)
+                if pygame.sprite.spritecollideany(self, simple_fight_room_group) and self.spawn_counter[0] < 1:
+                    enemy_spawn('simple', self.spawns[0])
+                    self.spawn_counter[0] += 1
+                    print(1, self.pos)
+                if pygame.sprite.spritecollideany(self, elite_fight_room_group) and self.spawn_counter[1] < 1:
+                    enemy_spawn('elite', self.spawns[1])
+                    self.spawn_counter[1] += 1
+                    print(2, self.pos)
+                if pygame.sprite.spritecollideany(self, boss_fight_room_group) and self.spawn_counter[2] < 1:
+                    enemy_spawn('boss', self.spawns[2])
+                    self.spawn_counter[2] += 1
+                    print(3, self.pos)
 
 
 class Inventory:
+    pass
+
+
+def start_fight():
     pass
 
 
@@ -194,24 +224,31 @@ class Projectile(pygame.sprite.Sprite):
         self.rect.center = round(self.pos.x), round(self.pos.y)
         if (self.pos.x < -10 or self.pos.x > WIDTH + 10) or \
                 (self.pos.y < -10 or self.pos.y > HEIGHT + 10) or \
-                pygame.sprite.spritecollideany(self, boxes_group):
+                pygame.sprite.spritecollideany(self, wall_group):
             self.kill()
 
 
 class TestEnemy(pygame.sprite.Sprite):
     images = ALL_SPRITES['TestEnemy']
 
-    def __init__(self, group):
+    def __init__(self, group, cords):
         super().__init__(group)
         self.image = TestEnemy.images[0]
         self.rect = self.image.get_rect()
+        self.orig_image = self.image
 
-        self.pos = pygame.math.Vector2(random.randint(0, WIDTH), random.randint(0, HEIGHT))
+        self.pos = pygame.math.Vector2(cords[0], cords[1])
+        self.rect.topleft = self.pos
         self.speed = 5
+        # print(self.pos)
 
     def update(self, player_cords):
         distance = round(pygame.math.Vector2(player_cords).distance_to(self.pos))
         goal = pygame.math.Vector2(self.pos - player_cords).normalize()
+        pos_x, pos_y = self.pos - player_cords
+        angle = math.degrees(math.atan2(pos_x, pos_y))
+        self.image = pygame.transform.rotozoom(self.orig_image, angle, 1)
+        self.rect = self.image.get_rect(topleft=self.rect.center)
         if distance > 200:
             self.pos -= goal * self.speed
             self.rect.center = round(self.pos.x), round(self.pos.y)
@@ -221,7 +258,8 @@ class TestEnemy(pygame.sprite.Sprite):
                 self.rect.center = round(self.pos.x), round(self.pos.y)
             new_goal = pygame.math.Vector2(goal.y, -goal.x)
             self.pos += new_goal * self.speed
-            self.rect.center = round(self.pos.x), round(self.pos.y)
+
+        self.rect.topleft = round(self.pos.x), round(self.pos.y)
         if pygame.sprite.spritecollideany(self, arrows_group):
             self.kill()
             all_objects.remove(self)
@@ -273,45 +311,99 @@ def load_level(filename):
 
 class Tile(pygame.sprite.Sprite):
     def __init__(self, tile_type, pos_x, pos_y):
-        if tile_type in ('floor_light', 'floor_dark'):
+        if tile_type == 'wall':
+            super().__init__(wall_group)
+            self.group = wall_group
+        else:
             super().__init__(tiles_group)
             self.group = tiles_group
-        else:
-            super().__init__(boxes_group)
-            self.group = boxes_group
+
+        self.room_type = None
+
         self.image = ALL_SPRITES[tile_type][0]
         self.tile_type = tile_type
         self.pos = [pos_x, pos_y]
         self.rect = self.image.get_rect().move(
             tile_width * self.pos[0], tile_height * self.pos[1])
 
+    def change_room_type(self):
+        if self.room_type in ('SimpleFight', 'EliteFight', 'BossFight'):
+            super().__init__(fight_room_group)
+            if self.room_type == 'SimpleFight':
+                super().__init__(simple_fight_room_group)
+                self.group = simple_fight_room_group
+            elif self.room_type == 'EliteFight':
+                super().__init__(elite_fight_room_group)
+                self.group = elite_fight_room_group
+            elif self.room_type == 'BossFight':
+                super().__init__(boss_fight_room_group)
+                self.group = boss_fight_room_group
+
     def update(self):
         delta = 100
+        self.pos = list(self.rect.topleft)
         if -delta <= self.rect.x <= WIDTH + delta and \
                 -delta <= self.rect.y <= HEIGHT + delta:
             to_draw_group.add(self)
         else:
-            self.remove(to_draw_group)
+            to_draw_group.remove(self)
 
 
 def generate_level(level):
     new_player, x, y = None, None, None
+    simple_rooms = []
+    elite_rooms = []
+    boss_rooms = []
     for y in range(len(level)):
         for x in range(len(level[y])):
             if level[y][x] == '#':
                 tile = Tile('wall', x, y)
                 all_objects.append(tile)
-            elif level[y][x] in ['.', '@']:
+                tile.change_room_type()
+            elif level[y][x] in ['.', '*', '\\', '^', '_', '@', '→']:
                 tile = Tile('floor_light', x, y) if (x + y) % 2 else Tile('floor_dark', x, y)
-                if level[y][x] == '@':
+                if level[y][x] == '.':
+                    tile.room_type = 'floor'
+                elif level[y][x] == '*':
+                    tile.room_type = 'SimpleFight'
+                    simple_rooms.append(tile)
+                elif level[y][x] == '\\':
+                    tile.room_type = 'EliteFight'
+                    elite_rooms.append(tile)
+                elif level[y][x] == '^':
+                    tile.room_type = 'BossFight'
+                    boss_rooms.append(tile)
+                elif level[y][x] == '_':
+                    tile.room_type = 'door'
+                elif level[y][x] == '@':
                     new_player = Player([x, y], player_group)
                     all_objects.append(new_player)
+                elif level[y][x] == '→':
+                    tile.room_type = 'exit'
+                tile.change_room_type()
                 all_objects.append(tile)
-    return new_player, x, y
+    return new_player, x, y, simple_rooms, elite_rooms, boss_rooms
 
 
-class WorldGenerator:
-    pass
+enemies = [[], [], []]
+
+
+def enemy_spawn(enemy_type, spawns):
+    cords = []
+    ind = None
+    if enemy_type == 'simple':
+        ind = 0
+        cords = random.sample(spawns, 5)
+    if enemy_type == 'elite':
+        ind = 1
+        cords = random.sample(spawns, 5)
+    if enemy_type == 'boss':
+        ind = 2
+        cords = random.sample(spawns, 1)
+    for cord in cords:
+        enemy = TestEnemy(enemies_group, (cord.pos[0], cord.pos[1]))
+        enemies[ind].append(enemy)
+        all_objects.append(enemy)
 
 
 class Floor:
@@ -353,11 +445,11 @@ class Camera:
         self.dy = 0
 
     def apply(self, obj):
-        obj.pos[0] += self.dx
-        obj.pos[1] += self.dy
         if isinstance(obj, Tile) or isinstance(obj, Player):
             obj.rect.x += self.dx
             obj.rect.y += self.dy
+        obj.pos[0] += self.dx
+        obj.pos[1] += self.dy
 
     def update(self, target):
         self.dx = -(target.pos[0] - WIDTH // 2)
@@ -370,12 +462,12 @@ def drawer(images):
 
 
 arrows = []
-enemies = []
 
 
 def main():
-    text_map = load_level('Map1.txt')
-    player, level_x, level_y = generate_level(text_map)
+    text_map = load_level('Map2.txt')
+    player, level_x, level_y, simple_spawns, elite_spawns, boss_spawns = generate_level(text_map)
+    player.spawns = [simple_spawns, elite_spawns, boss_spawns]
 
     all_images = [to_draw_group, arrows_group,
                   enemies_group, player_group]
@@ -397,8 +489,9 @@ def main():
                     all_objects.append(bullet)
             elif event.type == pygame.KEYDOWN:
                 if event.key == pygame.K_y:
-                    enemy = TestEnemy(enemies_group)
-                    enemies.append(enemy)
+                    pos = (random.randint(0, WIDTH), random.randint(0, HEIGHT))
+                    enemy = TestEnemy(enemies_group, pos)
+                    enemies[0].append(enemy)
                     all_objects.append(enemy)
 
         keys = pygame.key.get_pressed()
@@ -411,7 +504,7 @@ def main():
         for obj in all_objects:
             camera.apply(obj)
         tiles_group.update()
-        boxes_group.update()
+        wall_group.update()
 
         screen.fill('black')
         drawer(all_images)
