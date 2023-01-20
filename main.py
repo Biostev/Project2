@@ -16,7 +16,8 @@ ALL_SPRITES = {
     'TestEnemy': [],
     'floor_light': [],
     'floor_dark': [],
-    'wall': []
+    'wall': [],
+    'door': []
     }
 
 pygame.init()
@@ -104,82 +105,82 @@ class Player(pygame.sprite.Sprite):
     def __init__(self, pos, *group):
         super().__init__(*group)
         self.image = Player.images[0]
-        self.pos = [tile_width * pos[0], tile_height * pos[1]]
+        self.pos = [tile_width * (pos[0] + 0.5), tile_height * (pos[1] + 0.5)]
         self.rect = self.image.get_rect()
-        self.rect.topleft = self.pos
-
-        self.move = True
+        self.rect.center = self.pos
 
         self.inventory = []
         self.selected_item = None
 
-        self.speed = 30
-
-        self.arrow_speed = 10
-        self.spawns = None
-
-        self.spawn_counter = [0, 0, 0]
-        '''# main stats (always shown for player)
         self.hp = 200
-        self.mana = 200
-        self.stamina = 200
+        self.dmg = 5
+        self.speed = 20
 
-        # sub stats (shown in a special window)
-        self.attack = 5
-        self.attack_speed = 1
+        self.arrow_speed = 30
+        self.attack_speed = 500
+        self.last_shot_time = 0
 
-        self.move_speed = 5
-
-        self.max_hp = 200
-        self.max_mana = 200
-
-        self.mana_regeneration = 0
-
-        # weapon stats (increased with upgrades)
-        self.swing_width = 60
-
-        self.arrow_amount = 1
-
-        self.mana_usage = 0
-        self.spell_cast_speed = 5'''
+        self.spawns = None
+        self.spawn_counter = [0, 0, 0]
 
     def add_to_inventory(self, item):
         self.inventory.append(item)
 
-    def update(self, keys):
-        if keys:
-            old_rect = self.rect
-            old_pos = self.pos[:]
-            if keys[pygame.K_DOWN] or keys[pygame.K_s]:
-                self.rect = self.rect.move(0, self.speed)
-                self.pos[1] += self.speed
-            elif keys[pygame.K_UP] or keys[pygame.K_w]:
-                self.rect = self.rect.move(0, -self.speed)
-                self.pos[1] -= self.speed
-            elif keys[pygame.K_RIGHT] or keys[pygame.K_d]:
-                self.rect = self.rect.move(self.speed, 0)
-                self.pos[0] += self.speed
-            elif keys[pygame.K_LEFT] or keys[pygame.K_a]:
-                self.rect = self.rect.move(-self.speed, 0)
-                self.pos[0] -= self.speed
+    def wall_check(self, old_rect, old_pos):
+        if pygame.sprite.spritecollideany(self, wall_group) or \
+                pygame.sprite.spritecollideany(self, doors_group):
+            self.rect = old_rect
+            self.pos = old_pos
 
-            if pygame.sprite.spritecollideany(self, wall_group):
-                self.rect = old_rect
-                self.pos = old_pos
-            if pygame.sprite.spritecollideany(self, fight_room_group):
-                # print(self.spawns)
-                if pygame.sprite.spritecollideany(self, simple_fight_room_group) and self.spawn_counter[0] < 1:
-                    enemy_spawn('simple', self.spawns[0])
-                    self.spawn_counter[0] += 1
-                    print(1, self.pos)
-                if pygame.sprite.spritecollideany(self, elite_fight_room_group) and self.spawn_counter[1] < 1:
-                    enemy_spawn('elite', self.spawns[1])
-                    self.spawn_counter[1] += 1
-                    print(2, self.pos)
-                if pygame.sprite.spritecollideany(self, boss_fight_room_group) and self.spawn_counter[2] < 1:
-                    enemy_spawn('boss', self.spawns[2])
-                    self.spawn_counter[2] += 1
-                    print(3, self.pos)
+    def fight_start(self):
+        if pygame.sprite.spritecollideany(self, fight_room_group):
+            if pygame.sprite.spritecollideany(self, simple_fight_room_group) and self.spawn_counter[0] < 1:
+                enemy_spawn('simple', self.spawns[0])
+                self.spawn_counter[0] += 1
+            if pygame.sprite.spritecollideany(self, elite_fight_room_group) and self.spawn_counter[1] < 1:
+                enemy_spawn('elite', self.spawns[1])
+                self.spawn_counter[1] += 1
+            if pygame.sprite.spritecollideany(self, boss_fight_room_group) and self.spawn_counter[2] < 1:
+                enemy_spawn('boss', self.spawns[2])
+                self.spawn_counter[2] += 1
+
+    def shoot(self, pos):
+        now = pygame.time.get_ticks()
+        if now - self.last_shot_time > self.attack_speed:
+            self.last_shot_time = now
+            bullet = Projectile(arrows_group, self.arrow_speed, self.rect.center, pos)
+            arrows.append(bullet)
+            all_objects.append(bullet)
+
+    def move(self, keys):
+        old_rect = self.rect
+        old_pos = self.pos[:]
+        if keys[pygame.K_DOWN] or keys[pygame.K_s]:
+            self.rect = self.rect.move(0, self.speed)
+            self.pos[1] += self.speed
+        elif keys[pygame.K_UP] or keys[pygame.K_w]:
+            self.rect = self.rect.move(0, -self.speed)
+            self.pos[1] -= self.speed
+        elif keys[pygame.K_RIGHT] or keys[pygame.K_d]:
+            self.rect = self.rect.move(self.speed, 0)
+            self.pos[0] += self.speed
+        elif keys[pygame.K_LEFT] or keys[pygame.K_a]:
+            self.rect = self.rect.move(-self.speed, 0)
+            self.pos[0] -= self.speed
+        self.wall_check(old_rect, old_pos)
+
+    def update(self, keys):
+
+        if any(keys):
+            self.move(keys)
+
+            if keys[pygame.K_y]:
+                pos = (random.randint(0, WIDTH), random.randint(0, HEIGHT))
+                enemy = TestEnemy(enemies_group, pos)
+                enemies[0].append(enemy)
+                all_objects.append(enemy)
+
+        self.fight_start()
 
 
 class Inventory:
@@ -239,16 +240,22 @@ class TestEnemy(pygame.sprite.Sprite):
 
         self.pos = pygame.math.Vector2(cords[0], cords[1])
         self.rect.topleft = self.pos
-        self.speed = 5
-        # print(self.pos)
+        self.speed = 10
 
-    def update(self, player_cords):
-        distance = round(pygame.math.Vector2(player_cords).distance_to(self.pos))
-        goal = pygame.math.Vector2(self.pos - player_cords).normalize()
+        self.hp = 20
+
+        self.last_hit_time = 0
+        self.immune_frames = 200
+
+    def rotate(self, player_cords):
         pos_x, pos_y = self.pos - player_cords
         angle = math.degrees(math.atan2(pos_x, pos_y))
         self.image = pygame.transform.rotozoom(self.orig_image, angle, 1)
-        self.rect = self.image.get_rect(topleft=self.rect.center)
+        self.rect = self.image.get_rect(topleft=self.rect.topleft)
+
+    def move(self, player_cords):
+        distance = round(pygame.math.Vector2(player_cords).distance_to(self.pos))
+        goal = pygame.math.Vector2(self.pos - player_cords).normalize()
         if distance > 200:
             self.pos -= goal * self.speed
             self.rect.center = round(self.pos.x), round(self.pos.y)
@@ -258,11 +265,27 @@ class TestEnemy(pygame.sprite.Sprite):
                 self.rect.center = round(self.pos.x), round(self.pos.y)
             new_goal = pygame.math.Vector2(goal.y, -goal.x)
             self.pos += new_goal * self.speed
-
         self.rect.topleft = round(self.pos.x), round(self.pos.y)
-        if pygame.sprite.spritecollideany(self, arrows_group):
-            self.kill()
-            all_objects.remove(self)
+
+    def get_hit(self):
+        now = pygame.time.get_ticks()
+        if now - self.last_hit_time > self.immune_frames:
+            self.last_hit_time = now
+            self.hp -= 5
+
+    def update(self, player_cords):
+        self.move(player_cords)
+        self.rotate(player_cords)
+
+        for arrow in arrows_group:
+            if pygame.sprite.collide_mask(self, arrow):
+                self.get_hit()
+                if self.hp <= 0:
+                    self.kill()
+                    for i in range(len(enemies)):
+                        if self in enemies[i]:
+                            enemies[i].remove(self)
+            # all_objects.remove(self)
 
 
 class Staff(Weapon):
@@ -349,6 +372,23 @@ class Tile(pygame.sprite.Sprite):
             to_draw_group.remove(self)
 
 
+class Door(Tile):
+    images = ALL_SPRITES['door']
+
+    def __init__(self, tile_type, pos_x, pos_y):
+        super().__init__(tile_type, pos_x, pos_y)
+        self.alive_enemies = 0
+        self.image = Door.images[0]
+
+    def update(self):
+        if any(enemies):
+            wall_group.add(self)
+            to_draw_group.add(self)
+        else:
+            wall_group.remove(self)
+            to_draw_group.remove(self)
+
+
 def generate_level(level):
     new_player, x, y = None, None, None
     simple_rooms = []
@@ -374,7 +414,8 @@ def generate_level(level):
                     tile.room_type = 'BossFight'
                     boss_rooms.append(tile)
                 elif level[y][x] == '_':
-                    tile.room_type = 'door'
+                    door = Door('door', x, y)
+                    all_objects.append(door)
                 elif level[y][x] == '@':
                     new_player = Player([x, y], player_group)
                     all_objects.append(new_player)
@@ -407,34 +448,6 @@ def enemy_spawn(enemy_type, spawns):
 
 
 class Floor:
-    pass
-
-
-class Room:
-    pass
-
-
-class Start(Room):
-    pass
-
-
-class Shop(Room):
-    pass
-
-
-class BattleRoom(Room):
-    pass
-
-
-class SimpleRoom(BattleRoom):
-    pass
-
-
-class DifficultRoom(BattleRoom):
-    pass
-
-
-class BossRoom(BattleRoom):
     pass
 
 
@@ -481,30 +494,24 @@ def main():
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 running = False
-            elif event.type == pygame.MOUSEBUTTONDOWN:
+
+            if event.type == pygame.MOUSEBUTTONDOWN:
                 if event.button == 1:
                     pos = pygame.mouse.get_pos()
-                    bullet = Projectile(arrows_group, player.arrow_speed, player.rect.center, pos)
-                    arrows.append(bullet)
-                    all_objects.append(bullet)
-            elif event.type == pygame.KEYDOWN:
-                if event.key == pygame.K_y:
-                    pos = (random.randint(0, WIDTH), random.randint(0, HEIGHT))
-                    enemy = TestEnemy(enemies_group, pos)
-                    enemies[0].append(enemy)
-                    all_objects.append(enemy)
+                    player.shoot(pos)
 
         keys = pygame.key.get_pressed()
         player_group.update(keys)
+
         arrows_group.update()
-        if enemies:
-            enemies_group.update(player.rect.center)
+        enemies_group.update(player.rect.topleft)
 
         camera.update(player)
         for obj in all_objects:
             camera.apply(obj)
         tiles_group.update()
         wall_group.update()
+        doors_group.update()
 
         screen.fill('black')
         drawer(all_images)
