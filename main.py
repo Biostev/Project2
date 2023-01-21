@@ -17,7 +17,8 @@ ALL_SPRITES = {
     'floor_light': [],
     'floor_dark': [],
     'wall': [],
-    'door': []
+    'door': [],
+    'Cursor': []
     }
 
 pygame.init()
@@ -40,6 +41,9 @@ elite_fight_room_group = pygame.sprite.Group()
 boss_fight_room_group = pygame.sprite.Group()
 
 to_draw_group = pygame.sprite.Group()
+cursor = pygame.sprite.Group()
+
+hp_bars = []
 
 
 def load_image(filename):
@@ -53,10 +57,6 @@ for sprite in ALL_SPRITES.keys():
 
 
 class Screen:
-    pass
-
-
-class Menu(Screen):
     pass
 
 
@@ -79,12 +79,12 @@ class Scoreboard(Screen):
             return [str(time) for time in [hours, minutes, seconds]]
 
         with sqlite3.connect('Scoreboard.db') as db:
-            cursor = db.cursor()
+            db_cursor = db.cursor()
             query = '''
             INSERT INTO Scoreboard
             VALUES(?, ?, ?)
             '''
-            cursor.execute(query, [self.score, ':'.join(parse(duration)), DATE])
+            db_cursor.execute(query, [self.score, ':'.join(parse(duration)), DATE])
 
 
 class Settings(Screen):
@@ -95,8 +95,33 @@ class Gameplay(Screen):
     pass
 
 
-class Minimap:
-    pass
+class HpBar:
+    def __init__(self, owner):
+        self.owner = owner
+        x, y = owner.rect.bottomleft
+        self.width_const = owner.rect.width
+
+        self.cur_hp = pygame.Rect((x, y + owner.rect.height + 10,
+                                   self.width_const, 20))
+
+        self.max_hp = pygame.Rect((x, y + owner.rect.height + 10,
+                                   self.width_const, 20))
+
+        hp_bars.append(self)
+        all_objects.append(self)
+
+    def update(self, max_hp, cur_hp):
+        pos = self.owner.rect.bottomleft[0], self.owner.rect.bottomleft[1] + 10
+        self.cur_hp.width = cur_hp / max_hp * self.width_const
+        self.cur_hp.topleft = pos
+        self.max_hp.topleft = pos
+
+        if cur_hp <= 0:
+            hp_bars.remove(self)
+
+    def draw(self):
+        pygame.draw.rect(screen, (200, 0, 0), self.max_hp)
+        pygame.draw.rect(screen, (0, 200, 0), self.cur_hp)
 
 
 class Player(pygame.sprite.Sprite):
@@ -107,12 +132,17 @@ class Player(pygame.sprite.Sprite):
         self.image = Player.images[0]
         self.pos = [tile_width * (pos[0] + 0.5), tile_height * (pos[1] + 0.5)]
         self.rect = self.image.get_rect()
-        self.rect.center = self.pos
+        # self.rect.center = self.pos
+        self.rect.center = [tile_width * (pos[0] + 0.5), tile_height * (pos[1] + 0.5)]
+        self.mask = pygame.mask.from_surface(self.image)
+
+        self.score = 0
 
         self.inventory = []
         self.selected_item = None
 
-        self.hp = 200
+        self.max_hp = 200
+        self.cur_hp = 200
         self.dmg = 5
         self.speed = 20
 
@@ -123,6 +153,11 @@ class Player(pygame.sprite.Sprite):
         self.spawns = None
         self.spawn_counter = [0, 0, 0]
 
+        self.hp_bar = HpBar(self)
+
+    def hp_bar(self):
+        pass
+
     def add_to_inventory(self, item):
         self.inventory.append(item)
 
@@ -130,25 +165,24 @@ class Player(pygame.sprite.Sprite):
         if pygame.sprite.spritecollideany(self, wall_group) or \
                 pygame.sprite.spritecollideany(self, doors_group):
             self.rect = old_rect
-            self.pos = old_pos
+            # self.pos = old_pos
 
     def fight_start(self):
-        if pygame.sprite.spritecollideany(self, fight_room_group):
-            if pygame.sprite.spritecollideany(self, simple_fight_room_group) and self.spawn_counter[0] < 1:
-                enemy_spawn('simple', self.spawns[0])
-                self.spawn_counter[0] += 1
-            if pygame.sprite.spritecollideany(self, elite_fight_room_group) and self.spawn_counter[1] < 1:
-                enemy_spawn('elite', self.spawns[1])
-                self.spawn_counter[1] += 1
-            if pygame.sprite.spritecollideany(self, boss_fight_room_group) and self.spawn_counter[2] < 1:
-                enemy_spawn('boss', self.spawns[2])
-                self.spawn_counter[2] += 1
+        if pygame.sprite.spritecollideany(self, simple_fight_room_group) and self.spawn_counter[0] < 1:
+            enemy_spawn('simple', self.spawns[0])
+            self.spawn_counter[0] += 1
+        if pygame.sprite.spritecollideany(self, elite_fight_room_group) and self.spawn_counter[1] < 1:
+            enemy_spawn('elite', self.spawns[1])
+            self.spawn_counter[1] += 1
+        if pygame.sprite.spritecollideany(self, boss_fight_room_group) and self.spawn_counter[2] < 1:
+            enemy_spawn('boss', self.spawns[2])
+            self.spawn_counter[2] += 1
 
     def shoot(self, pos):
         now = pygame.time.get_ticks()
         if now - self.last_shot_time > self.attack_speed:
             self.last_shot_time = now
-            bullet = Projectile(arrows_group, self.arrow_speed, self.rect.center, pos)
+            bullet = Projectile(arrows_group, self.dmg, self.arrow_speed, self.rect.center, pos)
             arrows.append(bullet)
             all_objects.append(bullet)
 
@@ -157,20 +191,20 @@ class Player(pygame.sprite.Sprite):
         old_pos = self.pos[:]
         if keys[pygame.K_DOWN] or keys[pygame.K_s]:
             self.rect = self.rect.move(0, self.speed)
-            self.pos[1] += self.speed
+            # self.pos[1] += self.speed
         elif keys[pygame.K_UP] or keys[pygame.K_w]:
             self.rect = self.rect.move(0, -self.speed)
-            self.pos[1] -= self.speed
+            # self.pos[1] -= self.speed
         elif keys[pygame.K_RIGHT] or keys[pygame.K_d]:
             self.rect = self.rect.move(self.speed, 0)
-            self.pos[0] += self.speed
+            # self.pos[0] += self.speed
         elif keys[pygame.K_LEFT] or keys[pygame.K_a]:
             self.rect = self.rect.move(-self.speed, 0)
-            self.pos[0] -= self.speed
+            # self.pos[0] -= self.speed
         self.wall_check(old_rect, old_pos)
+        # print(self.pos)
 
     def update(self, keys):
-
         if any(keys):
             self.move(keys)
 
@@ -180,7 +214,10 @@ class Player(pygame.sprite.Sprite):
                 enemies[0].append(enemy)
                 all_objects.append(enemy)
 
-        self.fight_start()
+        if pygame.sprite.spritecollideany(self, fight_room_group):
+            self.fight_start()
+
+        self.hp_bar.update(self.max_hp, self.cur_hp)
 
 
 class Inventory:
@@ -211,14 +248,16 @@ class Bow(Weapon):
 class Projectile(pygame.sprite.Sprite):
     images = ALL_SPRITES['Arrow']
 
-    def __init__(self, group, speed, start_pos, goal):
+    def __init__(self, group, dmg, speed, start_pos, goal):
         super().__init__(group)
         self.image = Projectile.images[0]
         self.rect = self.image.get_rect()
+        self.mask = pygame.mask.from_surface(self.image)
 
         self.pos = pygame.math.Vector2(start_pos)
         self.goal = pygame.math.Vector2(goal[0] - self.pos[0], goal[1] - self.pos[1]).normalize()
         self.speed = speed
+        self.dmg = dmg
 
     def update(self):
         self.pos += self.goal * self.speed
@@ -237,15 +276,19 @@ class TestEnemy(pygame.sprite.Sprite):
         self.image = TestEnemy.images[0]
         self.rect = self.image.get_rect()
         self.orig_image = self.image
+        self.mask = pygame.mask.from_surface(self.image)
 
         self.pos = pygame.math.Vector2(cords[0], cords[1])
         self.rect.topleft = self.pos
         self.speed = 10
 
-        self.hp = 20
+        self.cur_hp = 20
+        self.max_hp = 20
 
         self.last_hit_time = 0
         self.immune_frames = 200
+
+        self.hp_bar = HpBar(self)
 
     def rotate(self, player_cords):
         pos_x, pos_y = self.pos - player_cords
@@ -267,11 +310,11 @@ class TestEnemy(pygame.sprite.Sprite):
             self.pos += new_goal * self.speed
         self.rect.topleft = round(self.pos.x), round(self.pos.y)
 
-    def get_hit(self):
+    def get_hit(self, arrow):
         now = pygame.time.get_ticks()
         if now - self.last_hit_time > self.immune_frames:
             self.last_hit_time = now
-            self.hp -= 5
+            self.cur_hp -= arrow.dmg
 
     def update(self, player_cords):
         self.move(player_cords)
@@ -279,13 +322,15 @@ class TestEnemy(pygame.sprite.Sprite):
 
         for arrow in arrows_group:
             if pygame.sprite.collide_mask(self, arrow):
-                self.get_hit()
-                if self.hp <= 0:
+                self.get_hit(arrow)
+                arrow.kill()
+                if self.cur_hp <= 0:
                     self.kill()
                     for i in range(len(enemies)):
                         if self in enemies[i]:
                             enemies[i].remove(self)
-            # all_objects.remove(self)
+        self.hp_bar.update(self.max_hp, self.cur_hp)
+        # all_objects.remove(self)
 
 
 class Staff(Weapon):
@@ -458,20 +503,40 @@ class Camera:
         self.dy = 0
 
     def apply(self, obj):
-        if isinstance(obj, Tile) or isinstance(obj, Player):
-            obj.rect.x += self.dx
-            obj.rect.y += self.dy
+        if isinstance(obj, HpBar):
+            obj.cur_hp.x += self.dx
+            obj.cur_hp.y += self.dy
+            obj.max_hp.x += self.dx
+            obj.max_hp.y += self.dy
+            return
+        obj.rect.x += self.dx
+        obj.rect.y += self.dy
         obj.pos[0] += self.dx
         obj.pos[1] += self.dy
 
     def update(self, target):
-        self.dx = -(target.pos[0] - WIDTH // 2)
-        self.dy = -(target.pos[1] - HEIGHT // 2)
+        self.dx = -(target.rect.x - WIDTH // 2)
+        self.dy = -(target.rect.y - HEIGHT // 2)
+
+
+class Cursor(pygame.sprite.Sprite):
+    image = ALL_SPRITES['Cursor'][0]
+
+    def __init__(self, *group):
+        super().__init__(*group)
+        self.image = Cursor.image
+        self.rect = self.image.get_rect()
+
+    def update(self, *args):
+        if args and args[0].type == pygame.MOUSEMOTION:
+            self.rect.center = args[0].pos
 
 
 def drawer(images):
     for image in images:
         image.draw(screen)
+    for hp_bar in hp_bars:
+        hp_bar.draw()
 
 
 arrows = []
@@ -488,33 +553,40 @@ def main():
     clock = pygame.time.Clock()
 
     camera = Camera(WIDTH, HEIGHT)
+    Cursor(cursor)
+
+    pygame.mouse.set_visible(False)
 
     running = True
     while running:
+        screen.fill('black')
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 running = False
+            cursor.update(event)
 
             if event.type == pygame.MOUSEBUTTONDOWN:
                 if event.button == 1:
                     pos = pygame.mouse.get_pos()
                     player.shoot(pos)
 
-        keys = pygame.key.get_pressed()
-        player_group.update(keys)
-
         arrows_group.update()
         enemies_group.update(player.rect.topleft)
-
-        camera.update(player)
-        for obj in all_objects:
-            camera.apply(obj)
         tiles_group.update()
         wall_group.update()
         doors_group.update()
 
-        screen.fill('black')
+        keys = pygame.key.get_pressed()
+        player_group.update(keys)
+
+        camera.update(player)
+        for obj in all_objects:
+            camera.apply(obj)
+
         drawer(all_images)
+
+        if pygame.mouse.get_focused():
+            cursor.draw(screen)
         clock.tick(FPS)
         pygame.display.flip()
 
