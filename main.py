@@ -142,12 +142,13 @@ class GameManager:
         elite_rooms = []
         boss_rooms = []
         for y in range(len(level)):
+            possible_symbols = ['.', '*', '\\', '^', '_', '@', 'e', '1', '2', '3']
             for x in range(len(level[y])):
                 if level[y][x] == '#':
                     tile = Tile('wall', x, y)
                     game.all_objects.append(tile)
                     tile.change_room_type()
-                elif level[y][x] in ['.', '*', '\\', '^', '_', '@', 'e']:
+                elif level[y][x] in possible_symbols:
                     if level[y][x] == 'e':
                         end = Exit('exit', x, y)
                         game.all_objects.append(end)
@@ -157,11 +158,17 @@ class GameManager:
                         tile.room_type = 'floor'
                     elif level[y][x] == '*':
                         tile.room_type = 'SimpleFight'
+                    elif level[y][x] == '1':
+                        tile.room_type = 'SimpleFight'
                         simple_rooms.append(tile)
                     elif level[y][x] == '\\':
                         tile.room_type = 'EliteFight'
+                    elif level[y][x] == '2':
+                        tile.room_type = 'EliteFight'
                         elite_rooms.append(tile)
                     elif level[y][x] == '^':
+                        tile.room_type = 'BossFight'
+                    elif level[y][x] == '3':
                         tile.room_type = 'BossFight'
                         boss_rooms.append(tile)
                     elif level[y][x] == '_':
@@ -303,12 +310,12 @@ class Player(pygame.sprite.Sprite):
 
         self.max_hp = 200
         self.cur_hp = 200
-        self.dmg = 1000
-        self.speed = 50
+        self.dmg = 10
+        self.speed = 20
         self.main_speed = self.speed
 
         self.arrow_speed = 30
-        self.attack_speed = 50
+        self.attack_speed = 300
         self.last_shot_time = 0
 
         self.spawns = None
