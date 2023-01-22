@@ -12,16 +12,19 @@ DATE = datetime.date.today()
 ALL_SPRITES = {
     'Player': [],
     'Arrow': [],
-    'TestEnemy': [],
     'floor_light': [],
     'floor_dark': [],
     'wall': [],
     'door': [],
+    'exit': [],
     'Cursor': [],
     'MeleeEnemy2': [],
     }
 
 pygame.init()
+pygame.mixer.music.load(os.path.join('gameplay resources', 'music', 'back_music') + '.wav')
+pygame.mixer.music.set_volume(0.01)
+pygame.mixer.music.play(-1)
 size = WIDTH, HEIGHT = 1920, 1080
 screen = pygame.display.set_mode(size)
 FPS = 30
@@ -34,7 +37,6 @@ class GameManager:
         self.arrows_group = pygame.sprite.Group()
         self.enemies_group = pygame.sprite.Group()
 
-        self.map_group = pygame.sprite.Group()
         self.tiles_group = pygame.sprite.Group()
         self.wall_group = pygame.sprite.Group()
         self.doors_group = pygame.sprite.Group()
@@ -50,7 +52,8 @@ class GameManager:
         self.cursor = pygame.sprite.Group()
 
         self.hp_bars = []
-        self.floor = 1
+        self.floor = 0
+        self.floor_passed = 0
 
         self.text_map = None
         self.tile_width = self.tile_height = 100
@@ -58,7 +61,9 @@ class GameManager:
 
         self.all_images = [self.to_draw_group, self.arrows_group,
                            self.enemies_group, self.player_group]
-        self.groups = [self.arrows_group, self.tiles_group, self.wall_group, self.doors_group]
+        self.groups = [self.arrows_group, self.tiles_group,
+                       self.wall_group, self.doors_group,
+                       self.exit_group]
 
         self.all_objects = []
         self.arrows = []
@@ -70,14 +75,13 @@ class GameManager:
         Cursor(self.cursor)
 
         pygame.mouse.set_visible(False)
+        self.hp_save = 200
 
-    def start_game(self):
-        self.score = 0
+    def start_game(self, new):
         self.player_group = pygame.sprite.Group()
         self.arrows_group = pygame.sprite.Group()
         self.enemies_group = pygame.sprite.Group()
 
-        self.map_group = pygame.sprite.Group()
         self.tiles_group = pygame.sprite.Group()
         self.wall_group = pygame.sprite.Group()
         self.doors_group = pygame.sprite.Group()
@@ -93,7 +97,12 @@ class GameManager:
         self.cursor = pygame.sprite.Group()
 
         self.hp_bars = []
-        self.floor = 1
+
+        if new:
+            self.score = 0
+            self.floor = 0
+            self.floor_passed = 0
+            self.hp_save = 200
 
         self.text_map = None
         self.tile_width = self.tile_height = 100
@@ -101,7 +110,9 @@ class GameManager:
 
         self.all_images = [self.to_draw_group, self.arrows_group,
                            self.enemies_group, self.player_group]
-        self.groups = [self.arrows_group, self.tiles_group, self.wall_group, self.doors_group]
+        self.groups = [self.arrows_group, self.tiles_group,
+                       self.wall_group, self.doors_group,
+                       self.exit_group]
 
         self.all_objects = []
         self.arrows = []
@@ -112,7 +123,12 @@ class GameManager:
         self.camera = Camera(WIDTH, HEIGHT)
         Cursor(self.cursor)
 
-        self.load_level('Map2.txt')
+        self.new_floor()
+        self.player.cur_hp = self.hp_save
+
+    def new_floor(self):
+        self.floor += 1
+        self.load_level('Map1.txt')
         self.generate_level(self.text_map)
 
     def load_level(self, filename):
@@ -131,7 +147,11 @@ class GameManager:
                     tile = Tile('wall', x, y)
                     game.all_objects.append(tile)
                     tile.change_room_type()
-                elif level[y][x] in ['.', '*', '\\', '^', '_', '@', '→']:
+                elif level[y][x] in ['.', '*', '\\', '^', '_', '@', 'e']:
+                    if level[y][x] == 'e':
+                        end = Exit('exit', x, y)
+                        game.all_objects.append(end)
+                        continue
                     tile = Tile('floor_light', x, y) if (x + y) % 2 else Tile('floor_dark', x, y)
                     if level[y][x] == '.':
                         tile.room_type = 'floor'
@@ -150,8 +170,6 @@ class GameManager:
                     elif level[y][x] == '@':
                         new_player = Player([x, y], self.player_group)
                         game.all_objects.append(new_player)
-                    elif level[y][x] == '→':
-                        tile.room_type = 'exit'
                     tile.change_room_type()
                     game.all_objects.append(tile)
         self.player, self.level_x, self.level_y = new_player, x, y
@@ -173,6 +191,7 @@ class GameManager:
                     pause()
 
         self.updater()
+        self.exit_group.update()
 
         self.enemies_group.update(self.player.rect.topleft)
 
@@ -284,8 +303,8 @@ class Player(pygame.sprite.Sprite):
 
         self.max_hp = 200
         self.cur_hp = 200
-        self.dmg = 5
-        self.speed = 20
+        self.dmg = 1000
+        self.speed = 50
         self.main_speed = self.speed
 
         self.arrow_speed = 30
@@ -306,6 +325,11 @@ class Player(pygame.sprite.Sprite):
         self.immune_frames = 200
 
     def wall_check(self, old_rect, old_pos):
+        if pygame.sprite.spritecollideany(self, game.exit_group):
+            game.score += 100
+            game.hp_save = self.cur_hp
+            game.start_game(False)
+
         if pygame.sprite.spritecollideany(self, game.wall_group) or \
                 pygame.sprite.spritecollideany(self, game.doors_group):
             self.rect = old_rect
@@ -444,7 +468,7 @@ class Projectile(pygame.sprite.Sprite):
 class MeleeEnemy(pygame.sprite.Sprite):
     images = ALL_SPRITES['MeleeEnemy2']
 
-    def __init__(self, group, cords, hp_modifier):
+    def __init__(self, group, cords, modifier):
         super().__init__(group)
         self.frame_index = 0
         self.image = MeleeEnemy.images[self.frame_index]
@@ -459,12 +483,14 @@ class MeleeEnemy(pygame.sprite.Sprite):
         self.speed = 10
         self.main_speed = self.speed
 
-        self.max_hp = 20 * game.floor * hp_modifier
+        self.modifier = modifier
+
+        self.max_hp = 20 * game.floor * self.modifier
         self.cur_hp = self.max_hp
 
         self.hp_bar = HpBar(self)
 
-        self.dmg = 20 * game.floor
+        self.dmg = round(20 * game.floor * self.modifier)
 
         self.in_attack = False
         self.last_attack = random.choice([j * 100 for j in range(20)])
@@ -533,7 +559,9 @@ class MeleeEnemy(pygame.sprite.Sprite):
                 arrow.kill()
                 if self.cur_hp <= 0:
                     self.kill()
-                    game.score += 5 * game.floor
+                    game.score += 5 * game.floor * self.modifier
+                    if self.modifier == 2:
+                        game.floor_passed += 1
                     for enemy in range(len(game.enemies)):
                         if self in game.enemies[enemy]:
                             game.enemies[enemy].remove(self)
@@ -545,6 +573,9 @@ class Tile(pygame.sprite.Sprite):
         if tile_type == 'wall':
             super().__init__(game.wall_group)
             self.group = game.wall_group
+        elif tile_type == 'exit':
+            super().__init__(game.exit_group)
+            self.group = game.exit_group
         else:
             super().__init__(game.tiles_group)
             self.group = game.tiles_group
@@ -585,7 +616,6 @@ class Door(Tile):
 
     def __init__(self, tile_type, pos_x, pos_y):
         super().__init__(tile_type, pos_x, pos_y)
-        self.alive_enemies = 0
         self.image = Door.images[0]
 
     def update(self):
@@ -595,6 +625,27 @@ class Door(Tile):
         else:
             game.wall_group.remove(self)
             game.to_draw_group.remove(self)
+
+
+class Exit(Tile):
+    closed = ALL_SPRITES['wall']
+    passed = ALL_SPRITES['exit']
+
+    def __init__(self, tile_type, pos_x, pos_y):
+        super().__init__(tile_type, pos_x, pos_y)
+        self.image = Exit.closed[0]
+        game.to_draw_group.add(self)
+
+    def update(self):
+        if game.floor_passed < game.floor:
+            game.exit_group.remove(self)
+            game.wall_group.add(self)
+            self.image = Exit.closed[0]
+        else:
+            game.wall_group.remove(self)
+            game.exit_group.add(self)
+            self.image = Exit.passed[0]
+        game.to_draw_group.add(self)
 
 
 class Camera:
@@ -668,7 +719,7 @@ def MainMenu():
                 if event.type == pygame.KEYDOWN:
                     if event.key == pygame.K_ESCAPE:
                         terminate()
-                game.start_game()
+                game.start_game(True)
                 return
         pygame.display.flip()
         time.tick(FPS)
@@ -740,33 +791,13 @@ def death_screen():
             if event.type == pygame.KEYDOWN:
                 if event.key == pygame.K_ESCAPE:
                     MainMenu()
-                return
+                    return
         pygame.display.flip()
         time.tick(FPS)
 
 
-# text_map = load_level('Map2.txt')
-# tile_width = tile_height = 100
-# all_objects = []
-# player, level_x, level_y, simple_spawns, elite_spawns, boss_spawns = generate_level(text_map)
-# player.spawns = [simple_spawns, elite_spawns, boss_spawns]
-#
-# all_images = [to_draw_group, arrows_group,
-#               enemies_group, player_group]
-#
-# arrows = []
-# enemies = [[], [], []]
-#
-# groups = [arrows_group, tiles_group, wall_group, doors_group]
-#
-# clock = pygame.time.Clock()
-#
-# camera = Camera(WIDTH, HEIGHT)
-# Cursor(cursor)
-
-
-running = True
 game = GameManager()
+running = True
 
 
 def main():
