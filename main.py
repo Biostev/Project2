@@ -128,7 +128,8 @@ class GameManager:
 
     def new_floor(self):
         self.floor += 1
-        self.load_level('Map1.txt')
+        all_maps = os.listdir(path=os.path.join('gameplay resources', 'maps'))
+        self.load_level(random.choice(all_maps))
         self.generate_level(self.text_map)
 
     def load_level(self, filename):
@@ -142,12 +143,13 @@ class GameManager:
         elite_rooms = []
         boss_rooms = []
         for y in range(len(level)):
+            possible_symbols = ['.', '*', '\\', '^', '_', '@', 'e', '1', '2', '3']
             for x in range(len(level[y])):
                 if level[y][x] == '#':
                     tile = Tile('wall', x, y)
                     game.all_objects.append(tile)
                     tile.change_room_type()
-                elif level[y][x] in ['.', '*', '\\', '^', '_', '@', 'e']:
+                elif level[y][x] in possible_symbols:
                     if level[y][x] == 'e':
                         end = Exit('exit', x, y)
                         game.all_objects.append(end)
@@ -157,11 +159,17 @@ class GameManager:
                         tile.room_type = 'floor'
                     elif level[y][x] == '*':
                         tile.room_type = 'SimpleFight'
+                    elif level[y][x] == '1':
+                        tile.room_type = 'SimpleFight'
                         simple_rooms.append(tile)
                     elif level[y][x] == '\\':
                         tile.room_type = 'EliteFight'
+                    elif level[y][x] == '2':
+                        tile.room_type = 'EliteFight'
                         elite_rooms.append(tile)
                     elif level[y][x] == '^':
+                        tile.room_type = 'BossFight'
+                    elif level[y][x] == '3':
                         tile.room_type = 'BossFight'
                         boss_rooms.append(tile)
                     elif level[y][x] == '_':
@@ -302,13 +310,13 @@ class Player(pygame.sprite.Sprite):
         self.score = 0
 
         self.max_hp = 200
-        self.cur_hp = 200
-        self.dmg = 1000
-        self.speed = 50
+        self.cur_hp = self.max_hp
+        self.dmg = 5 + 5 * game.floor
+        self.speed = 20
         self.main_speed = self.speed
 
         self.arrow_speed = 30
-        self.attack_speed = 50
+        self.attack_speed = 300
         self.last_shot_time = 0
 
         self.spawns = None
@@ -690,7 +698,9 @@ class Cursor(pygame.sprite.Sprite):
 
 def MainMenu():
     intro_text = [
-        'Press any key',
+        'Crazy Dungeon',
+        '',
+        'Press ENTER',
         'to start the game',
         'or ESC to exit'
     ]
@@ -714,20 +724,19 @@ def MainMenu():
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 terminate()
-            elif event.type == pygame.KEYDOWN or \
-                    event.type == pygame.MOUSEBUTTONDOWN:
-                if event.type == pygame.KEYDOWN:
-                    if event.key == pygame.K_ESCAPE:
-                        terminate()
-                game.start_game(True)
-                return
+            elif event.type == pygame.KEYDOWN:
+                if event.key == pygame.K_ESCAPE:
+                    terminate()
+                if event.key == pygame.K_RETURN:
+                    game.start_game(True)
+                    return
         pygame.display.flip()
         time.tick(FPS)
 
 
 def pause():
     intro_text = [
-        'Press any key to continue',
+        'Press G to continue',
         'or ESC to exit to main menu'
     ]
 
@@ -751,12 +760,12 @@ def pause():
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 terminate()
-            elif event.type == pygame.KEYDOWN or \
-                    event.type == pygame.MOUSEBUTTONDOWN:
-                if event.type == pygame.KEYDOWN:
-                    if event.key == pygame.K_ESCAPE:
-                        MainMenu()
-                return
+            elif event.type == pygame.KEYDOWN:
+                if event.key == pygame.K_ESCAPE:
+                    MainMenu()
+                    return
+                if event.key == pygame.K_g:
+                    return
         pygame.display.flip()
         time.tick(FPS)
 
@@ -765,7 +774,7 @@ def death_screen():
     intro_text = [
         'Game Over',
         f'Your score is {game.score}.',
-        'or ESC to exit to main menu'
+        'Press ESC to exit to the main menu'
     ]
 
     fon = pygame.transform.scale(load_image('pause'), (WIDTH, HEIGHT))
